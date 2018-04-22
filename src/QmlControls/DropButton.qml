@@ -1,19 +1,24 @@
-import QtQuick                  2.4
+import QtQuick                  2.3
 import QtQuick.Controls         1.2
-import QtQuick.Controls.Styles  1.2
+import QtQuick.Controls.Styles  1.4
 
+import QGroundControl               1.0
 import QGroundControl.ScreenTools   1.0
 import QGroundControl.Palette       1.0
 
 Item {
     id: _root
+    z:  QGroundControl.zOrderWidgets
 
     signal          clicked()
-    property alias  buttonImage:        button.source
-    property real   radius:             ScreenTools.defaultFontPixelHeight * 1.5
+    property alias  buttonImage:        roundButton.buttonImage
+    property alias  rotateImage:        roundButton.rotateImage
+    property real   radius:             ScreenTools.isMobile ? ScreenTools.defaultFontPixelHeight * 1.75 : ScreenTools.defaultFontPixelHeight * 1.25
     property int    dropDirection:      dropDown
     property alias  dropDownComponent:  dropDownLoader.sourceComponent
     property real   viewportMargins:    0
+    property real   topMargin:          parent.height - ScreenTools.availableHeight
+    property alias  lightBorders:       roundButton.lightBorders
 
     width:  radius * 2
     height: radius * 2
@@ -24,21 +29,21 @@ Item {
     readonly property int dropUp:       3
     readonly property int dropDown:     4
 
-    readonly property real _arrowBaseWidth:     (radius * 2) / 2    // Width of long side of arrow
-    readonly property real _arrowPointHeight:   (radius * 2) / 3    // Height is long side to point
-    readonly property real _dropCornerRadius:   ScreenTools.defaultFontPixelWidth / 2
+    readonly property real _arrowBaseWidth:     radius             // Width of long side of arrow
+    readonly property real _arrowPointHeight:   radius * 0.666     // Height is long side to point
+    readonly property real _dropCornerRadius:   ScreenTools.defaultFontPixelWidth * 0.5
     readonly property real _dropCornerRadiusX2: _dropCornerRadius * 2
     readonly property real _dropMargin:         _dropCornerRadius
     readonly property real _dropMarginX2:       _dropMargin * 2
 
     property real   _viewportMaxLeft:   -x + viewportMargins
-    property real   _viewportMaxRight:  parent.width - (viewportMargins * 2) - x
-    property real   _viewportMaxTop:    -y + viewportMargins
+    property real   _viewportMaxRight:  parent.width  - (viewportMargins * 2) - x
+    property real   _viewportMaxTop:    -y + viewportMargins + topMargin
     property real   _viewportMaxBottom: parent.height - (viewportMargins * 2) - y
 
     // Set up ExclusiveGroup support. We use the checked property to drive visibility of drop down.
 
-    property bool checked: false
+    property alias checked: roundButton.checked
     property ExclusiveGroup exclusiveGroup: null
 
     onExclusiveGroupChanged: {
@@ -50,8 +55,6 @@ Item {
     function hideDropDown() {
         checked = false
     }
-
-    Component.onCompleted: _calcPositions()
 
     function _calcPositions() {
         var dropComponentWidth = dropDownLoader.item.width
@@ -77,7 +80,7 @@ Item {
 
                 dropItemHolderRect.y = 0
             } else {
-                dropDownItem.y = button.height + _dropMargin
+                dropDownItem.y = roundButton.height + _dropMargin
 
                 dropItemHolderRect.y = _arrowPointHeight
             }
@@ -87,7 +90,7 @@ Item {
             dropDownItem.x = Math.min(dropDownItem.x + dropDownItem.width, _viewportMaxRight) - dropDownItem.width
 
             // Arrow points
-            arrowCanvas.arrowPoint.x = (button.x + radius) - dropDownItem.x
+            arrowCanvas.arrowPoint.x = (roundButton.x + radius) - dropDownItem.x
             if (dropDirection == dropUp) {
                 arrowCanvas.arrowPoint.y = dropDownItem.height
                 arrowCanvas.arrowBase1.x = arrowCanvas.arrowPoint.x - (_arrowBaseWidth / 2)
@@ -109,11 +112,11 @@ Item {
             dropItemHolderRect.y = 0
 
             if (dropDirection == dropLeft) {
-                dropDownItem.x = dropDownItem.width + _dropMargin
+                dropDownItem.x = -(dropDownItem.width + _dropMargin)
 
                 dropItemHolderRect.x = 0
             } else {
-                dropDownItem.x = button.width + _dropMargin
+                dropDownItem.x = roundButton.width + _dropMargin
 
                 dropItemHolderRect.x = _arrowPointHeight
             }
@@ -123,7 +126,7 @@ Item {
             dropDownItem.y = Math.min(dropDownItem.y + dropDownItem.height, _viewportMaxBottom) - dropDownItem.height
 
             // Arrow points
-            arrowCanvas.arrowPoint.y = (button.y + radius) - dropDownItem.y
+            arrowCanvas.arrowPoint.y = (roundButton.y + radius) - dropDownItem.y
             if (dropDirection == dropLeft) {
                 arrowCanvas.arrowPoint.x = dropDownItem.width
                 arrowCanvas.arrowBase1.x = arrowCanvas.arrowPoint.x - _arrowPointHeight
@@ -155,29 +158,13 @@ Item {
         }
     }
 
-    // Button
-    Rectangle {
-        anchors.fill:   parent
-        radius:         width / 2
-        border.width:   ScreenTools.defaultFontPixelHeight * 0.0625
-        border.color:   "white"
-        color:          checked ? qgcPal.mapButtonHighlight : qgcPal.mapButton
-
-        Image {
-            id:             button
-            anchors.fill:   parent
-            fillMode:       Image.PreserveAspectFit
-            mipmap:         true
-            smooth:         true
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked:  {
-                    checked = !checked
-                    _root.clicked()
-                }
-            }
-        } // Image - button
+    RoundButton {
+        id:             roundButton
+        radius:         parent.width / 2
+        onClicked:  {
+            _calcPositions()
+            _root.clicked()
+        }
     }
 
     Item {
@@ -231,20 +218,11 @@ Item {
 
         Item {
             id:     dropItemHolderRect
-            //color:  qgcPal.button
-            //radius: _dropCornerRadius
 
             Loader {
                 id: dropDownLoader
                 x:  _dropMargin
                 y:  _dropMargin
-
-                Connections {
-                    target: dropDownLoader.item
-
-                    onWidthChanged: _calcPositions()
-                    onHeightChanged: _calcPositions()
-                }
             }
         }
     } // Item - dropDownItem

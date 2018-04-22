@@ -1,25 +1,12 @@
-/*=====================================================================
+/****************************************************************************
+ *
+ *   (c) 2009-2016 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
 
- QGroundControl Open Source Ground Control Station
-
- (c) 2009 - 2014 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
-
- This file is part of the QGROUNDCONTROL project
-
- QGROUNDCONTROL is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
-
- QGROUNDCONTROL is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with QGROUNDCONTROL. If not, see <http://www.gnu.org/licenses/>.
-
- ======================================================================*/
 
 /// @file
 ///     @author Don Gagne <don@thegagnes.com>
@@ -43,13 +30,19 @@ PX4AirframeLoader::PX4AirframeLoader(AutoPilotPlugin* autopilot, UASInterface* u
     Q_UNUSED(autopilot);
     Q_UNUSED(uas);
     Q_UNUSED(parent);
-    Q_ASSERT(uas);
+}
+
+QString PX4AirframeLoader::aiframeMetaDataFile(void)
+{
+    QSettings settings;
+    QDir parameterDir = QFileInfo(settings.fileName()).dir();
+    return parameterDir.filePath("PX4AirframeFactMetaData.xml");
 }
 
 /// Load Airframe Fact meta data
 ///
 /// The meta data comes from firmware airframes.xml file.
-void PX4AirframeLoader::loadAirframeFactMetaData(void)
+void PX4AirframeLoader::loadAirframeMetaData(void)
 {
     if (_airframeMetaDataLoaded) {
         return;
@@ -57,16 +50,17 @@ void PX4AirframeLoader::loadAirframeFactMetaData(void)
 
     qCDebug(PX4AirframeLoaderLog) << "Loading PX4 airframe fact meta data";
 
-    Q_ASSERT(AirframeComponentAirframes::get().count() == 0);
+    if (AirframeComponentAirframes::get().count() != 0) {
+        qCWarning(PX4AirframeLoaderLog) << "Internal error";
+        return;
+    }
 
     QString airframeFilename;
 
     // We want unit test builds to always use the resource based meta data to provide repeatable results
     if (!qgcApp()->runningUnitTests()) {
         // First look for meta data that comes from a firmware download. Fall back to resource if not there.
-        QSettings settings;
-        QDir parameterDir = QFileInfo(settings.fileName()).dir();
-        airframeFilename = parameterDir.filePath("PX4AirframeFactMetaData.xml");
+        airframeFilename = aiframeMetaDataFile();
     }
     if (airframeFilename.isEmpty() || !QFile(airframeFilename).exists()) {
         airframeFilename = ":/AutoPilotPlugins/PX4/AirframeFactMetaData.xml";
@@ -75,11 +69,12 @@ void PX4AirframeLoader::loadAirframeFactMetaData(void)
     qCDebug(PX4AirframeLoaderLog) << "Loading meta data file:" << airframeFilename;
 
     QFile xmlFile(airframeFilename);
-    Q_ASSERT(xmlFile.exists());
+    if (!xmlFile.exists()) {
+        qCWarning(PX4AirframeLoaderLog) << "Internal error";
+        return;
+    }
 
     bool success = xmlFile.open(QIODevice::ReadOnly);
-    Q_UNUSED(success);
-    Q_ASSERT(success);
 
     if (!success) {
         qCWarning(PX4AirframeLoaderLog) << "Failed opening airframe XML";
@@ -129,6 +124,10 @@ void PX4AirframeLoader::loadAirframeFactMetaData(void)
                     return;
                 }
 
+            } else if (elementName == "airframe_version_major") {
+                // Just skip over for now
+            } else if (elementName == "airframe_version_minor") {
+                // Just skip over for now
 
             } else if (elementName == "airframe_group") {
                 if (xmlState != XmlStateFoundVersion) {

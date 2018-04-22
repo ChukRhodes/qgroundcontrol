@@ -1,25 +1,12 @@
-/*=====================================================================
- 
- QGroundControl Open Source Ground Control Station
- 
- (c) 2009 - 2015 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
- 
- This file is part of the QGROUNDCONTROL project
- 
- QGROUNDCONTROL is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
- 
- QGROUNDCONTROL is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
- 
- You should have received a copy of the GNU General Public License
- along with QGROUNDCONTROL. If not, see <http://www.gnu.org/licenses/>.
- 
- ======================================================================*/
+/****************************************************************************
+ *
+ *   (c) 2009-2016 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
+
 
 #ifndef MissionControllerTest_H
 #define MissionControllerTest_H
@@ -29,7 +16,9 @@
 #include "MissionManager.h"
 #include "MultiSignalSpy.h"
 #include "MissionControllerManagerTest.h"
+#include "PlanMasterController.h"
 #include "MissionController.h"
+#include "SimpleMissionItem.h"
 
 #include <QGeoCoordinate>
 
@@ -43,49 +32,51 @@ public:
 private slots:
     void cleanup(void);
 
+    void _testGimbalRecalc(void);
+    void _testLoadJsonSectionAvailable(void);
     void _testEmptyVehicleAPM(void);
     void _testEmptyVehiclePX4(void);
     void _testAddWayppointAPM(void);
     void _testAddWayppointPX4(void);
+
+private:
+#if 0
     void _testOfflineToOnlineAPM(void);
     void _testOfflineToOnlinePX4(void);
+#endif
 
 private:
     void _initForFirmwareType(MAV_AUTOPILOT firmwareType);
     void _testEmptyVehicleWorker(MAV_AUTOPILOT firmwareType);
     void _testAddWaypointWorker(MAV_AUTOPILOT firmwareType);
+#if 0
     void _testOfflineToOnlineWorker(MAV_AUTOPILOT firmwareType);
-    void _setupMissionItemSignals(MissionItem* item);
+#endif
+    void _setupVisualItemSignals(VisualMissionItem* visualItem);
 
     // MissiomItems signals
 
     enum {
         coordinateChangedSignalIndex = 0,
-        homePositionValidChangedSignalIndex,
-        missionItemMaxSignalIndex
+        visualItemMaxSignalIndex
     };
 
     enum {
-        coordinateChangedSignalMask =           1 << coordinateChangedSignalIndex,
-        homePositionValidChangedSignalMask =    1 << homePositionValidChangedSignalIndex,
-        missionItemMaxSignalMask =              1 << missionItemMaxSignalIndex,
+        coordinateChangedSignalMask =   1 << coordinateChangedSignalIndex,
+        visualItemMaxSignalMask =       1 << visualItemMaxSignalIndex,
     };
 
     // MissionController signals
 
     enum {
-        missionItemsChangedSignalIndex = 0,
+        visualItemsChangedSignalIndex = 0,
         waypointLinesChangedSignalIndex,
-        liveHomePositionAvailableChangedSignalIndex,
-        liveHomePositionChangedSignalIndex,
         missionControllerMaxSignalIndex
     };
 
     enum {
-        missionItemsChangedSignalMask =                 1 << missionItemsChangedSignalIndex,
+        visualItemsChangedSignalMask =                 1 << visualItemsChangedSignalIndex,
         waypointLinesChangedSignalMask =                1 << waypointLinesChangedSignalIndex,
-        liveHomePositionAvailableChangedSignalMask =    1 << liveHomePositionAvailableChangedSignalIndex,
-        liveHomePositionChangedSignalMask =             1 << liveHomePositionChangedSignalIndex,
     };
 
     MultiSignalSpy*     _multiSpyMissionController;
@@ -93,10 +84,11 @@ private:
     const char*         _rgMissionControllerSignals[_cMissionControllerSignals];
 
     MultiSignalSpy*     _multiSpyMissionItem;
-    static const size_t _cMissionItemSignals = missionItemMaxSignalIndex;
-    const char*         _rgMissionItemSignals[_cMissionItemSignals];
+    static const size_t _cVisualItemSignals = visualItemMaxSignalIndex;
+    const char*         _rgVisualItemSignals[_cVisualItemSignals];
 
-    MissionController*  _missionController;
+    PlanMasterController*   _masterController;
+    MissionController*      _missionController;
 };
 
 #endif

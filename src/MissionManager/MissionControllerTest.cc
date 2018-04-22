@@ -1,29 +1,21 @@
-/*=====================================================================
- 
- QGroundControl Open Source Ground Control Station
- 
- (c) 2009 - 2014 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
- 
- This file is part of the QGROUNDCONTROL project
- 
- QGROUNDCONTROL is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
- 
- QGROUNDCONTROL is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- GNU General Public License for more details.
- 
- You should have received a copy of the GNU General Public License
- along with QGROUNDCONTROL. If not, see <http://www.gnu.org/licenses/>.
- 
- ======================================================================*/
+/****************************************************************************
+ *
+ *   (c) 2009-2016 QGROUNDCONTROL PROJECT <http://www.qgroundcontrol.org>
+ *
+ * QGroundControl is licensed according to the terms in the file
+ * COPYING.md in the root of the source code directory.
+ *
+ ****************************************************************************/
+
 
 #include "MissionControllerTest.h"
 #include "LinkManager.h"
 #include "MultiVehicleManager.h"
+#include "SimpleMissionItem.h"
+#include "MissionSettingsItem.h"
+#include "QGCApplication.h"
+#include "SettingsManager.h"
+#include "AppSettings.h"
 
 MissionControllerTest::MissionControllerTest(void)
     : _multiSpyMissionController(NULL)
@@ -35,8 +27,8 @@ MissionControllerTest::MissionControllerTest(void)
 
 void MissionControllerTest::cleanup(void)
 {
-    delete _missionController;
-    _missionController = NULL;
+    delete _masterController;
+    _masterController = NULL;
 
     delete _multiSpyMissionController;
     _multiSpyMissionController = NULL;
@@ -49,68 +41,50 @@ void MissionControllerTest::cleanup(void)
 
 void MissionControllerTest::_initForFirmwareType(MAV_AUTOPILOT firmwareType)
 {
-    bool startController = false;
-
     MissionControllerManagerTest::_initForFirmwareType(firmwareType);
 
-    void coordinateChanged(const QGeoCoordinate& coordinate);
-    void headingDegreesChanged(double heading);
-    void dirtyChanged(bool dirty);
-    void homePositionValidChanged(bool homePostionValid);
-
-    // MissionItem signals
-    _rgMissionItemSignals[coordinateChangedSignalIndex] =           SIGNAL(coordinateChanged(const QGeoCoordinate&));
-    _rgMissionItemSignals[homePositionValidChangedSignalIndex] =    SIGNAL(homePositionValidChanged(bool));
+    // VisualMissionItem signals
+    _rgVisualItemSignals[coordinateChangedSignalIndex] = SIGNAL(coordinateChanged(const QGeoCoordinate&));
 
     // MissionController signals
-    _rgMissionControllerSignals[missionItemsChangedSignalIndex] =               SIGNAL(missionItemsChanged());
-    _rgMissionControllerSignals[waypointLinesChangedSignalIndex] =              SIGNAL(waypointLinesChanged());
-    _rgMissionControllerSignals[liveHomePositionAvailableChangedSignalIndex] =  SIGNAL(liveHomePositionAvailableChanged(bool));
-    _rgMissionControllerSignals[liveHomePositionChangedSignalIndex] =           SIGNAL(liveHomePositionChanged(const QGeoCoordinate&));
+    _rgMissionControllerSignals[visualItemsChangedSignalIndex] =    SIGNAL(visualItemsChanged());
+    _rgMissionControllerSignals[waypointLinesChangedSignalIndex] =  SIGNAL(waypointLinesChanged());
 
-    if (!_missionController) {
-        startController = true;
-        _missionController = new MissionController();
-        Q_CHECK_PTR(_missionController);
-    }
+    // Master controller pulls offline vehicle info from settings
+    qgcApp()->toolbox()->settingsManager()->appSettings()->offlineEditingFirmwareType()->setRawValue(firmwareType);
+    _masterController = new PlanMasterController(this);
+    _missionController = _masterController->missionController();
 
     _multiSpyMissionController = new MultiSignalSpy();
     Q_CHECK_PTR(_multiSpyMissionController);
     QCOMPARE(_multiSpyMissionController->init(_missionController, _rgMissionControllerSignals, _cMissionControllerSignals), true);
 
-    if (startController) {
-        _missionController->start(false /* editMode */);
-    }
+    _masterController->start(true /* editMode */);
 
     // All signals should some through on start
-    QCOMPARE(_multiSpyMissionController->checkOnlySignalsByMask(missionItemsChangedSignalMask | waypointLinesChangedSignalMask | liveHomePositionAvailableChangedSignalMask | liveHomePositionChangedSignalMask), true);
+    QCOMPARE(_multiSpyMissionController->checkOnlySignalsByMask(visualItemsChangedSignalMask | waypointLinesChangedSignalMask), true);
     _multiSpyMissionController->clearAllSignals();
 
-    QmlObjectListModel* missionItems = _missionController->missionItems();
-    QVERIFY(missionItems);
+    QmlObjectListModel* visualItems = _missionController->visualItems();
+    QVERIFY(visualItems);
 
     // Empty vehicle only has home position
-    QCOMPARE(missionItems->count(), 1);
+    QCOMPARE(visualItems->count(), 1);
 
-    // Home position should be in first slot, but not yet valid
-    MissionItem* homeItem = qobject_cast<MissionItem*>(missionItems->get(0));
-    QVERIFY(homeItem);
-    QCOMPARE(homeItem->homePosition(), true);
-    QCOMPARE(homeItem->homePositionValid(), false);
+    // Mission Settings should be in first slot
+    MissionSettingsItem* settingsItem = visualItems->value<MissionSettingsItem*>(0);
+    QVERIFY(settingsItem);
 
-    // Home should have no children
-    QCOMPARE(homeItem->childItems()->count(), 0);
+    // Offline vehicle, so no home position
+    QCOMPARE(settingsItem->coordinate().isValid(), false);
+
+    // Empty mission, so no child items possible
+    QCOMPARE(settingsItem->childItems()->count(), 0);
 
     // No waypoint lines
     QmlObjectListModel* waypointLines = _missionController->waypointLines();
     QVERIFY(waypointLines);
     QCOMPARE(waypointLines->count(), 0);
-
-    // Should not have home position yet
-    QCOMPARE(_missionController->liveHomePositionAvailable(), false);
-
-    // AutoSync should be off by default
-    QCOMPARE(_missionController->autoSync(), false);
 }
 
 void MissionControllerTest::_testEmptyVehicleWorker(MAV_AUTOPILOT firmwareType)
@@ -120,44 +94,12 @@ void MissionControllerTest::_testEmptyVehicleWorker(MAV_AUTOPILOT firmwareType)
     // FYI: A significant amount of empty vehicle testing is in _initForFirmwareType since that
     // sets up an empty vehicle
 
-    // APM stack doesn't support HOME_POSITION yet
-    bool expectedHomePositionValid = firmwareType == MAV_AUTOPILOT_PX4 ? true : false;
+    QmlObjectListModel* visualItems = _missionController->visualItems();
+    QVERIFY(visualItems);
+    VisualMissionItem* visualItem = visualItems->value<VisualMissionItem*>(0);
+    QVERIFY(visualItem);
 
-    QmlObjectListModel* missionItems = _missionController->missionItems();
-    QVERIFY(missionItems);
-    MissionItem* homeItem = qobject_cast<MissionItem*>(missionItems->get(0));
-    QVERIFY(homeItem);
-
-    _setupMissionItemSignals(homeItem);
-
-    if (expectedHomePositionValid) {
-        // Wait for the home position to show up
-
-        if (!_missionController->liveHomePositionAvailable()) {
-            QVERIFY(_multiSpyMissionController->waitForSignalByIndex(liveHomePositionAvailableChangedSignalIndex, 2000));
-            QCOMPARE(_multiSpyMissionController->pullBoolFromSignalIndex(liveHomePositionAvailableChangedSignalIndex), true);
-        }
-
-        if (!homeItem->homePositionValid()) {
-            QVERIFY(_multiSpyMissionItem->waitForSignalByIndex(homePositionValidChangedSignalIndex, 2000));
-            QCOMPARE(_multiSpyMissionItem->pullBoolFromSignalIndex(homePositionValidChangedSignalIndex), true);
-        }
-
-        // Once the home position shows up we get a number of addititional signals
-
-        QCOMPARE(_multiSpyMissionController->checkOnlySignalsByMask(liveHomePositionChangedSignalMask | liveHomePositionAvailableChangedSignalMask | waypointLinesChangedSignalMask), true);
-        QCOMPARE(_multiSpyMissionController->checkSignalByMask(liveHomePositionChangedSignalMask | liveHomePositionAvailableChangedSignalMask), true);
-        QCOMPARE(_multiSpyMissionController->checkSignalByMask(waypointLinesChangedSignalMask), false);
-
-        QCOMPARE(_multiSpyMissionItem->checkSignalByMask(homePositionValidChangedSignalMask), true);
-
-        _multiSpyMissionController->clearAllSignals();
-        _multiSpyMissionItem->clearAllSignals();
-    }
-
-    QCOMPARE(homeItem->homePositionValid(), expectedHomePositionValid);
-    QCOMPARE(_missionController->liveHomePositionAvailable(), expectedHomePositionValid);
-    QCOMPARE(_missionController->liveHomePosition().isValid(), expectedHomePositionValid);
+    _setupVisualItemSignals(visualItem);
 }
 
 void MissionControllerTest::_testEmptyVehiclePX4(void)
@@ -176,31 +118,32 @@ void MissionControllerTest::_testAddWaypointWorker(MAV_AUTOPILOT firmwareType)
 
     QGeoCoordinate coordinate(37.803784, -122.462276);
 
-    _missionController->addMissionItem(coordinate);
+    _missionController->insertSimpleMissionItem(coordinate, _missionController->visualItems()->count());
 
     QCOMPARE(_multiSpyMissionController->checkOnlySignalsByMask(waypointLinesChangedSignalMask), true);
 
-    QmlObjectListModel* missionItems = _missionController->missionItems();
-    QVERIFY(missionItems);
+    QmlObjectListModel* visualItems = _missionController->visualItems();
+    QVERIFY(visualItems);
 
-    QCOMPARE(missionItems->count(), 2);
+    QCOMPARE(visualItems->count(), 2);
 
-    MissionItem* homeItem = qobject_cast<MissionItem*>(missionItems->get(0));
-    MissionItem* item = qobject_cast<MissionItem*>(missionItems->get(1));
-    QVERIFY(homeItem);
-    QVERIFY(item);
+    MissionSettingsItem* settingsItem = visualItems->value<MissionSettingsItem*>(0);
+    SimpleMissionItem* simpleItem = visualItems->value<SimpleMissionItem*>(1);
+    QVERIFY(settingsItem);
+    QVERIFY(simpleItem);
 
-    QCOMPARE(item->command(), MavlinkQmlSingleton::MAV_CMD_NAV_TAKEOFF);
-    QCOMPARE(homeItem->childItems()->count(), 0);
-    QCOMPARE(item->childItems()->count(), 0);
+    QCOMPARE(simpleItem->command(), MavlinkQmlSingleton::MAV_CMD_NAV_TAKEOFF);
+    QCOMPARE(simpleItem->childItems()->count(), 0);
 
-    int expectedLineCount;
-    if (homeItem->homePositionValid()) {
-        expectedLineCount = 1;
-    } else {
-        expectedLineCount = 0;
-    }
+    // If the first item added specifies a coordinate, then planned home position will be set
+    bool plannedHomePositionValue = firmwareType == MAV_AUTOPILOT_ARDUPILOTMEGA ? false : true;
+    QCOMPARE(settingsItem->coordinate().isValid(), plannedHomePositionValue);
 
+    // ArduPilot takeoff command has no coordinate, so should be child item
+    QCOMPARE(settingsItem->childItems()->count(), firmwareType == MAV_AUTOPILOT_ARDUPILOTMEGA ? 1 : 0);
+
+    // Check waypoint line from home to takeoff
+    int expectedLineCount = firmwareType == MAV_AUTOPILOT_ARDUPILOTMEGA ? 0 : 1;
     QmlObjectListModel* waypointLines = _missionController->waypointLines();
     QVERIFY(waypointLines);
     QCOMPARE(waypointLines->count(), expectedLineCount);
@@ -217,19 +160,25 @@ void MissionControllerTest::_testAddWayppointPX4(void)
     _testAddWaypointWorker(MAV_AUTOPILOT_PX4);
 }
 
+#if 0
 void MissionControllerTest::_testOfflineToOnlineWorker(MAV_AUTOPILOT firmwareType)
 {
     // Start offline and add item
     _missionController = new MissionController();
     Q_CHECK_PTR(_missionController);
     _missionController->start(true /* editMode */);
-    _missionController->addMissionItem(QGeoCoordinate(37.803784, -122.462276));
+    _missionController->insertSimpleMissionItem(QGeoCoordinate(37.803784, -122.462276), _missionController->visualItems()->count());
 
     // Go online to empty vehicle
     MissionControllerManagerTest::_initForFirmwareType(firmwareType);
 
-    // Make sure our offline mission items are still there
-    QCOMPARE(_missionController->missionItems()->count(), 2);
+#if 1
+    // Due to current limitations, offline items will go away
+    QCOMPARE(_missionController->visualItems()->count(), 1);
+#else
+    //Make sure our offline mission items are still there
+    QCOMPARE(_missionController->visualItems()->count(), 2);
+#endif
 }
 
 void MissionControllerTest::_testOfflineToOnlineAPM(void)
@@ -241,12 +190,61 @@ void MissionControllerTest::_testOfflineToOnlinePX4(void)
 {
     _testOfflineToOnlineWorker(MAV_AUTOPILOT_PX4);
 }
+#endif
 
-void MissionControllerTest::_setupMissionItemSignals(MissionItem* item)
+void MissionControllerTest::_setupVisualItemSignals(VisualMissionItem* visualItem)
 {
     delete _multiSpyMissionItem;
 
     _multiSpyMissionItem = new MultiSignalSpy();
     Q_CHECK_PTR(_multiSpyMissionItem);
-    QCOMPARE(_multiSpyMissionItem->init(item, _rgMissionItemSignals, _cMissionItemSignals), true);
+    QCOMPARE(_multiSpyMissionItem->init(visualItem, _rgVisualItemSignals, _cVisualItemSignals), true);
+}
+
+void MissionControllerTest::_testGimbalRecalc(void)
+{
+    _initForFirmwareType(MAV_AUTOPILOT_PX4);
+    _missionController->insertSimpleMissionItem(QGeoCoordinate(0, 0), 1);
+    _missionController->insertSimpleMissionItem(QGeoCoordinate(0, 0), 2);
+    _missionController->insertSimpleMissionItem(QGeoCoordinate(0, 0), 3);
+    _missionController->insertSimpleMissionItem(QGeoCoordinate(0, 0), 4);
+
+    // No specific gimbal yaw set yet
+    for (int i=1; i<_missionController->visualItems()->count(); i++) {
+        VisualMissionItem* visualItem = _missionController->visualItems()->value<VisualMissionItem*>(i);
+        QVERIFY(qIsNaN(visualItem->missionGimbalYaw()));
+    }
+
+    // Specify gimbal yaw on settings item should generate yaw on all items
+    MissionSettingsItem* settingsItem = _missionController->visualItems()->value<MissionSettingsItem*>(0);
+    settingsItem->cameraSection()->setSpecifyGimbal(true);
+    settingsItem->cameraSection()->gimbalYaw()->setRawValue(0.0);
+    for (int i=1; i<_missionController->visualItems()->count(); i++) {
+        VisualMissionItem* visualItem = _missionController->visualItems()->value<VisualMissionItem*>(i);
+        QCOMPARE(visualItem->missionGimbalYaw(), 0.0);
+    }
+}
+
+void MissionControllerTest::_testLoadJsonSectionAvailable(void)
+{
+    _initForFirmwareType(MAV_AUTOPILOT_PX4);
+    _masterController->loadFromFile(":/unittest/SectionTest.plan");
+
+    QmlObjectListModel* visualItems = _missionController->visualItems();
+    QVERIFY(visualItems);
+    QCOMPARE(visualItems->count(), 5);
+
+    // Check that only waypoint items have camera and speed sections
+    for (int i=1; i<visualItems->count(); i++) {
+        SimpleMissionItem* item = visualItems->value<SimpleMissionItem*>(i);
+        QVERIFY(item);
+        if ((int)item->command() == MAV_CMD_NAV_WAYPOINT) {
+            QCOMPARE(item->cameraSection()->available(), true);
+            QCOMPARE(item->speedSection()->available(), true);
+        } else {
+            QCOMPARE(item->cameraSection()->available(), false);
+            QCOMPARE(item->speedSection()->available(), false);
+        }
+
+    }
 }
